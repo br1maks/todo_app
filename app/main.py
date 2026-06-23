@@ -1,12 +1,20 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import auth, todos, categories
-
+from contextlib import asynccontextmanager
+from app.rabbitmq import init_rabbitmq, close_rabbitmq
 import traceback
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_rabbitmq()
+    yield
+    await close_rabbitmq()
+
+app = FastAPI(lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

@@ -7,6 +7,8 @@ from app.dependencies import get_current_user
 from app.models.todo import Todo
 from app.models.user import User
 from sqlalchemy import select
+from app.models.category import Category
+from app.rabbitmq import publish_event
 
 router = APIRouter(prefix="/todos", tags=["Todos"])
 
@@ -24,8 +26,17 @@ async def get_todos_by_id(todo_id: uuid.UUID, db: AsyncSession = Depends(get_db)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     return todo
 
+
+
 @router.post("/", response_model=TodoResponse, status_code=status.HTTP_201_CREATED)
 async def create_todo(data: TodoCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if data.category_id is not None:
+        category_result = await db.execute(
+            select(Category).where(Category.id == data.category_id, Category.owner_id == current_user.id)
+        )
+        if category_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+
     todo = Todo(
         title=data.title,
         description=data.description,
@@ -36,6 +47,12 @@ async def create_todo(data: TodoCreate, db: AsyncSession = Depends(get_db), curr
     db.add(todo)
     await db.commit()
     await db.refresh(todo)
+
+    await publish_event("todo_created", {
+        "todo_id": str(todo.id),
+        "user_id": str(current_user.id),
+        "title": todo.title,
+    })
     return todo
 
 @router.put("/{todo_id}", response_model=TodoResponse, status_code=status.HTTP_200_OK)
