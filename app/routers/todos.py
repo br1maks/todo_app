@@ -9,6 +9,8 @@ from app.models.user import User
 from sqlalchemy import select
 from app.models.category import Category
 from app.rabbitmq import publish_event
+import logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/todos", tags=["Todos"])
 
@@ -48,11 +50,14 @@ async def create_todo(data: TodoCreate, db: AsyncSession = Depends(get_db), curr
     await db.commit()
     await db.refresh(todo)
 
-    await publish_event("todo_created", {
-        "todo_id": str(todo.id),
-        "user_id": str(current_user.id),
-        "title": todo.title,
-    })
+    try:
+        await publish_event("todo_created", {
+            "todo_id": str(todo.id),
+            "user_id": str(current_user.id),
+            "title": todo.title,
+        })
+    except Exception:
+        logger.exception("Failed to publish event")
     return todo
 
 @router.put("/{todo_id}", response_model=TodoResponse, status_code=status.HTTP_200_OK)
